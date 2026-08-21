@@ -1,0 +1,25 @@
+# Render blueprint for the API. Import this repo at dashboard.render.com/blueprints
+services:
+  - type: web
+    name: peoples-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci && npm run build -w @peoples/api
+    startCommand: node apps/api/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false          # set in the dashboard, never in git
+      - key: CORS_ORIGINS
+        sync: false          # your Vercel URL, e.g. https://peoples.vercel.app
+      - key: SENDER_SIGNATURE
+        value: Vikram, Codevani
+      - key: FOLLOW_UP_DAYS
+        value: "3"
+      - key: DAILY_SEND_CAP
+        value: "30"
+      - key: ANTHROPIC_API_KEY
+        sync: false          # optional; insights work without it

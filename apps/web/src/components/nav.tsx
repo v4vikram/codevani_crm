@@ -1,0 +1,45 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { LayoutDashboard, Users, Upload, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const TABS = [
+  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/leads", label: "Leads", icon: Users },
+  { href: "/import", label: "Import", icon: Upload },
+  { href: "/insights", label: "Insights", icon: Sparkles },
+];
+
+/**
+ * Bottom bar on phones, top bar on desktop. Bottom placement matters: this is
+ * used one-handed while walking, and the thumb does not reach the top.
+ */
+export function Nav() {
+  const pathname = usePathname();
+
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card safe-bottom sm:sticky sm:top-0 sm:bottom-auto sm:border-b sm:border-t-0 sm:pb-0">
+      <div className="mx-auto flex max-w-3xl">
+        {TABS.map(({ href, label, icon: Icon }) => {
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors sm:flex-row sm:justify-center sm:gap-2 sm:py-3 sm:text-sm",
+                active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="size-5 sm:size-4" />
+              {label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}

@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.local
+.next/
+dist/
+*.tsbuildinfo
+
+# Lead data and scraper output stay local
+cvs/
+leads-*.csv
+.cache-places.json
+outreach.html

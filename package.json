@@ -1,0 +1,25 @@
+{
+  "name": "peoples",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Lead finder and outreach CRM for Delhi NCR construction firms without websites",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @peoples/api && npm run build -w @peoples/web",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @peoples/api",
+    "dev:web": "npm run dev -w @peoples/web",
+    "smoke": "npm run smoke -w @peoples/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
