@@ -71,6 +71,13 @@ async function main() {
     list.body.leads?.map((l: { score: number }) => l.score),
   );
   check("has a wa number", /^91\d{10}$/.test(list.body.leads[0].waNumber ?? ""), list.body.leads[0].waNumber);
+  check("list carries a ready message", (list.body.leads[0].nextMessage ?? "").length > 80);
+  check(
+    "list carries a wa link",
+    (list.body.leads[0].waUrl ?? "").startsWith("https://wa.me/"),
+    list.body.leads[0].waUrl?.slice(0, 40),
+  );
+  check("list message is touch 1", list.body.leads[0].nextTouch === 1, list.body.leads[0].nextTouch);
 
   const lead = list.body.leads[0];
   console.log(`\nmessage for "${lead.name}"`);
@@ -89,6 +96,12 @@ async function main() {
   const msg2 = await agent.get(`/api/leads/${lead._id}/message`);
   check("next message is the touch-2 template", msg2.body.touch === 2, msg2.body.touch);
   check("touch-2 text differs", msg2.body.message !== msg.body.message);
+
+  // The list must advance too, or the button there would resend touch 1.
+  const listAfter = await agent.get("/api/leads?limit=5");
+  const same = listAfter.body.leads.find((l: { _id: string }) => l._id === lead._id);
+  check("list advances to touch 2 after sending", same?.nextTouch === 2, same?.nextTouch);
+  check("list wa link uses the follow-up text", same?.waUrl !== list.body.leads[0].waUrl);
 
   console.log("\ndaily cap counter");
   const today = await agent.get("/api/leads/usage/today");

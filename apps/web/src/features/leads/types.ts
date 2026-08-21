@@ -45,6 +45,11 @@ export interface Lead {
   nextFollowUpAt: string | null;
   createdAt: string;
   updatedAt: string;
+
+  /** Precomputed by the API so the list can offer one-tap WhatsApp. */
+  nextTouch: 1 | 2 | 3;
+  nextMessage: string;
+  waUrl: string | null;
 }
 
 export interface LeadEvent {

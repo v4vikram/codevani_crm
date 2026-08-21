@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-client";
-import { fetchLeads, leadKeys } from "../api/leads.api";
+import { fetchLeads, fetchTodayUsage, leadKeys } from "../api/leads.api";
 import { STATUSES, STATUS_META, type LeadFilters, type Status } from "../types";
 import { LeadCard } from "./lead-card";
 
@@ -29,6 +29,9 @@ export function LeadList({ initialFilters = {} }: { initialFilters?: LeadFilters
     queryFn: () => fetchLeads(filters),
     placeholderData: keepPreviousData,
   });
+
+  const { data: usage } = useQuery({ queryKey: leadKeys.usage(), queryFn: fetchTodayUsage });
+  const atCap = usage ? usage.sentToday >= usage.cap : false;
 
   /** Any filter change resets to page 1 -- staying on page 4 of a new filter is disorienting. */
   const setFilter = (patch: Partial<LeadFilters>) =>
@@ -122,12 +125,25 @@ export function LeadList({ initialFilters = {} }: { initialFilters?: LeadFilters
 
       {data && data.leads.length > 0 && (
         <>
-          <p className="text-sm text-muted-foreground">
-            {data.total} lead{data.total === 1 ? "" : "s"}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {data.total} lead{data.total === 1 ? "" : "s"}
+            </p>
+            {usage && (
+              <p className={atCap ? "text-sm font-medium text-warning" : "text-sm text-muted-foreground"}>
+                {usage.sentToday}/{usage.cap} sent today
+              </p>
+            )}
+          </div>
+
+          {atCap && (
+            <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+              You have hit today&apos;s cap. Stopping here is what keeps your number alive.
+            </p>
+          )}
           <div className={isPlaceholderData ? "space-y-3 opacity-60" : "space-y-3"}>
             {data.leads.map((lead) => (
-              <LeadCard key={lead._id} lead={lead} />
+              <LeadCard key={lead._id} lead={lead} atCap={atCap} />
             ))}
           </div>
 

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { Types } from "mongoose";
 import { STATUSES, LEAD_TYPES, DEAD_REASONS, type LeadType, type Status, type DeadReason } from "./lead.rules.js";
 import type { LeadDoc } from "./lead.model.js";
+import { buildMessage, waLink, type Touch } from "../messaging/message.template.js";
+import { env } from "../../core/env.js";
 
 /** Shape returned to the client. Dates become ISO strings, _id becomes a string. */
 export interface LeadDTO {
@@ -29,12 +31,37 @@ export interface LeadDTO {
   nextFollowUpAt: string | null;
   createdAt: string;
   updatedAt: string;
+
+  /**
+   * The next message, precomputed. Carried on every lead so the list can offer
+   * a one-tap WhatsApp button without a round-trip per card — a link's href
+   * has to exist at click time, so it cannot be fetched on tap.
+   */
+  nextTouch: Touch;
+  nextMessage: string;
+  waUrl: string | null;
 }
 
 type LeanLead = LeadDoc & { _id: Types.ObjectId; createdAt: Date; updatedAt: Date };
 
 export function toLeadDTO(doc: LeanLead): LeadDTO {
+  const nextTouch = Math.min(3, (doc.touches ?? 0) + 1) as Touch;
+  const nextMessage = buildMessage(
+    {
+      name: doc.name,
+      area: doc.area ?? "",
+      rating: doc.rating ?? 0,
+      reviews: doc.reviews ?? 0,
+      leadType: doc.leadType as LeadType,
+    },
+    env.SENDER_SIGNATURE,
+    nextTouch,
+  );
+
   return {
+    nextTouch,
+    nextMessage,
+    waUrl: doc.waNumber ? waLink(doc.waNumber, nextMessage) : null,
     _id: doc._id.toString(),
     name: doc.name,
     phone: doc.phone,

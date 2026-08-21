@@ -1,58 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Check, Send, TriangleAlert } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, Check, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api-client";
-import {
-  fetchNextMessage,
-  fetchTodayUsage,
-  leadKeys,
-  markSent,
-} from "@/features/leads/api/leads.api";
+import { fetchTodayUsage, leadKeys } from "@/features/leads/api/leads.api";
 import type { Lead } from "@/features/leads/types";
+import { WhatsAppButton } from "./whatsapp-button";
 
 /**
- * The daily-cap guard is the whole reason sending stays manual. WhatsApp bans
- * numbers based on how recipients react, so the cap is a deliberate brake, not
- * a technical limit.
+ * The full send view: read the message, edit it if it reads wrong, then send.
+ * The list has a one-tap version of the same action for when no edit is needed.
  */
 export function SendPanel({ lead }: { lead: Lead }) {
-  const queryClient = useQueryClient();
   const [edited, setEdited] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const { data: next, isPending } = useQuery({
-    queryKey: leadKeys.message(lead._id),
-    queryFn: () => fetchNextMessage(lead._id),
-  });
+  const { data: usage } = useQuery({ queryKey: leadKeys.usage(), queryFn: fetchTodayUsage });
 
-  const { data: usage } = useQuery({
-    queryKey: leadKeys.usage(),
-    queryFn: fetchTodayUsage,
-  });
-
-  const sent = useMutation({
-    mutationFn: () => markSent(lead._id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: leadKeys.all });
-      setEdited(null);
-    },
-  });
-
-  if (isPending || !next) return <Skeleton className="h-64 w-full" />;
-
-  const message = edited ?? next.message;
+  const message = edited ?? lead.nextMessage;
   const atCap = usage ? usage.sentToday >= usage.cap : false;
-  const noNumber = !lead.waNumber;
-
-  // Rebuild the link so edits to the text are carried into WhatsApp.
-  const waUrl = lead.waNumber
-    ? `https://wa.me/${lead.waNumber}?text=${encodeURIComponent(message)}`
-    : null;
 
   const copy = async () => {
     try {
@@ -60,7 +28,7 @@ export function SendPanel({ lead }: { lead: Lead }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard blocked; the textarea is selectable as a fallback */
+      /* clipboard blocked; the textarea is still selectable */
     }
   };
 
@@ -68,14 +36,10 @@ export function SendPanel({ lead }: { lead: Lead }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">
-          {next.touch === 1 ? "First message" : `Follow-up ${next.touch - 1}`}
+          {lead.nextTouch === 1 ? "First message" : `Follow-up ${lead.nextTouch - 1}`}
         </h2>
         {usage && (
-          <span
-            className={
-              atCap ? "text-sm font-medium text-warning" : "text-sm text-muted-foreground"
-            }
-          >
+          <span className={atCap ? "text-sm font-medium text-warning" : "text-sm text-muted-foreground"}>
             {usage.sentToday}/{usage.cap} today
           </span>
         )}
@@ -100,7 +64,7 @@ export function SendPanel({ lead }: { lead: Lead }) {
         </p>
       )}
 
-      {noNumber && (
+      {!lead.waNumber && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           This lead&apos;s phone number could not be read, so WhatsApp cannot be opened. Call{" "}
           {lead.phone} instead.
@@ -108,34 +72,19 @@ export function SendPanel({ lead }: { lead: Lead }) {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button asChild size="lg" className="flex-1" disabled={noNumber}>
-          <a
-            href={waUrl ?? "#"}
-            target="_blank"
-            rel="noopener noreferrer"
-            // Opening WhatsApp is the closest thing to proof a message was sent,
-            // so that is where the touch gets recorded.
-            onClick={() => {
-              if (!noNumber) sent.mutate();
-            }}
-          >
-            <Send /> Open WhatsApp
-          </a>
-        </Button>
+        <WhatsAppButton
+          lead={lead}
+          message={message}
+          atCap={atCap}
+          size="lg"
+          className="flex-1"
+          label="Open WhatsApp"
+        />
         <Button variant="outline" size="lg" onClick={copy}>
           {copied ? <Check /> : <Copy />}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-
-      {sent.isError && (
-        <p className="text-sm text-destructive">{apiErrorMessage(sent.error)}</p>
-      )}
-      {sent.isSuccess && (
-        <p className="text-sm text-success">
-          Marked as sent. Follow-up scheduled automatically.
-        </p>
-      )}
     </div>
   );
 }

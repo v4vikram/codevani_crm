@@ -1,30 +1,38 @@
+"use client";
+
 import Link from "next/link";
-import { Star, MessageSquare, Clock } from "lucide-react";
+import { Star, MessageSquare, Clock, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn, timeAgo, isOverdue } from "@/lib/utils";
+import { WhatsAppButton } from "@/features/messaging/components/whatsapp-button";
+import { timeAgo, isOverdue } from "@/lib/utils";
 import { LEAD_TYPE_META, STATUS_META, type Lead } from "../types";
 
 /**
- * One row in the queue. The whole card is the tap target -- on a phone,
- * small inline links are a miss-tap waiting to happen.
+ * One row in the queue.
+ *
+ * The card uses a stretched link: the whole surface opens the detail page, but
+ * the WhatsApp button sits above it so you can send straight from the list.
+ * A real <button> inside an <a> would be invalid HTML and swallow the tap.
  */
-export function LeadCard({ lead }: { lead: Lead }) {
+export function LeadCard({ lead, atCap = false }: { lead: Lead; atCap?: boolean }) {
   const type = LEAD_TYPE_META[lead.leadType];
   const status = STATUS_META[lead.status];
   const due = isOverdue(lead.nextFollowUpAt);
 
   return (
-    <Link
-      href={`/leads/${lead._id}`}
-      className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
+    <div className="relative rounded-lg border border-border bg-card p-4 transition-colors focus-within:border-primary/40 hover:border-primary/40">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-semibold leading-snug">{lead.name}</h3>
-        <span
-          className="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground"
-          title="Lead score"
-        >
+        <h3 className="font-semibold leading-snug">
+          <Link
+            href={`/leads/${lead._id}`}
+            className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+          >
+            {lead.name}
+          </Link>
+        </h3>
+        <span className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums text-muted-foreground">
           {lead.score}
+          <ChevronRight className="size-4" />
         </span>
       </div>
 
@@ -50,17 +58,28 @@ export function LeadCard({ lead }: { lead: Lead }) {
         <Badge className={type.className}>{type.label}</Badge>
         <Badge className={status.className}>{status.label}</Badge>
         {due && (
-          <Badge className="bg-warning/20 text-warning inline-flex items-center gap-1">
+          <Badge className="inline-flex items-center gap-1 bg-warning/20 text-warning">
             <Clock className="size-3" />
             follow up
           </Badge>
         )}
         {lead.nextFollowUpAt && !due && (
-          <span className={cn("text-xs text-muted-foreground")}>
+          <span className="text-xs text-muted-foreground">
             next {timeAgo(lead.nextFollowUpAt).replace(" ago", " from now")}
           </span>
         )}
       </div>
-    </Link>
+
+      {/* z-10 lifts the button above the stretched link's ::after overlay. */}
+      <div className="relative z-10 mt-3 flex items-center gap-2">
+        <WhatsAppButton
+          lead={lead}
+          atCap={atCap}
+          size="sm"
+          label={lead.nextTouch === 1 ? "WhatsApp" : `Follow-up ${lead.nextTouch - 1}`}
+        />
+        <span className="truncate text-xs text-muted-foreground">{lead.phone}</span>
+      </div>
+    </div>
   );
 }

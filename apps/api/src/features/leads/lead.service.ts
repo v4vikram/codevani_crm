@@ -3,7 +3,6 @@ import { env } from "../../core/env.js";
 import { HttpError } from "../../core/http.js";
 import { Lead, type LeadDoc } from "./lead.model.js";
 import { Event } from "../events/event.model.js";
-import { buildMessage, waLink, type Touch } from "../messaging/message.template.js";
 import {
   toLeadDTO,
   type LeadDTO,
@@ -78,28 +77,15 @@ export async function getLead(id: string | undefined) {
   return { lead: toLeadDTO(doc.toObject() as LeanLead), events };
 }
 
-/** The message to send next, already personalised for the right touch. */
+/**
+ * The message to send next. Every lead already carries this (see toLeadDTO);
+ * this endpoint stays for callers that hold only an id.
+ */
 export async function getNextMessage(id: string | undefined) {
   const doc = await findOrThrow(id);
-  const touch = Math.min(3, (doc.touches ?? 0) + 1) as Touch;
+  const dto = toLeadDTO(doc.toObject() as LeanLead);
 
-  const message = buildMessage(
-    {
-      name: doc.name,
-      area: doc.area ?? "",
-      rating: doc.rating ?? 0,
-      reviews: doc.reviews ?? 0,
-      leadType: doc.leadType as LeadDTO["leadType"],
-    },
-    env.SENDER_SIGNATURE,
-    touch,
-  );
-
-  return {
-    message,
-    touch,
-    waUrl: doc.waNumber ? waLink(doc.waNumber, message) : null,
-  };
+  return { message: dto.nextMessage, touch: dto.nextTouch, waUrl: dto.waUrl };
 }
 
 export async function updateLead(id: string | undefined, input: UpdateLeadInput): Promise<LeadDTO> {
