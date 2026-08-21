@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Nav } from "@/components/nav";
+import { AuthGuard } from "@/features/auth/components/auth-guard";
 
 export const metadata: Metadata = {
   title: "Peoples CRM",
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <Nav />
           {/* Bottom padding clears the mobile tab bar. */}
-          <main className="mx-auto max-w-3xl px-4 pb-24 pt-4 sm:pb-8">{children}</main>
+          <main className="mx-auto max-w-3xl px-4 pb-24 pt-4 sm:pb-8">
+            <AuthGuard>{children}</AuthGuard>
+          </main>
         </Providers>
       </body>
     </html>

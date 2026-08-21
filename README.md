@@ -29,6 +29,7 @@ apps/api/src/
   core/                env (zod-validated) · db · http
   app.ts               the feature registry
   features/
+    auth/              JWT sessions, bcrypt, first-run setup
     leads/             rules · model · dto · service · controller · routes
     events/            append-only history of every touch
     import/            CSV column detection + idempotent upsert
@@ -41,6 +42,7 @@ apps/web/src/
   components/ui/       shadcn-style primitives
   lib/                 axios client, helpers
   features/
+    auth/              context · guard · login
     leads/             api · types · components
     import/ stats/ insights/ messaging/
 ```
@@ -67,11 +69,27 @@ Then open http://localhost:3000, go to **Import**, and drop in an Apify CSV.
 ### Verifying without Atlas
 
 ```bash
-npm run smoke        # spins up an in-memory MongoDB, runs 36 checks
+npm run smoke        # spins up an in-memory MongoDB, runs 58 checks
 ```
 
 This imports the real CSV in `cvs/`, walks a lead through the whole pipeline,
 and asserts the stats maths. No account or network needed.
+
+## Accounts
+
+Every data route requires a session — the lead list holds real businesses'
+phone numbers, so nothing is public.
+
+**First run:** open the site and it offers to create the first account. After
+that, registration is closed unless `SIGNUP_CODE` is set on the API.
+
+Sessions are JWTs valid for 7 days, sent as a Bearer token. Cookies would be
+cleaner, but the app and API sit on different domains (Vercel and Render) and
+browsers that block third-party cookies would silently drop a cross-site
+session cookie.
+
+`JWT_SECRET` must be set in production — the API refuses to boot with the
+development default, since a known secret lets anyone forge a session.
 
 ## The daily loop
 

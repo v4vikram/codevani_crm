@@ -21,5 +21,9 @@ services:
         value: "3"
       - key: DAILY_SEND_CAP
         value: "30"
+      - key: JWT_SECRET
+        generateValue: true   # Render generates a strong random secret
+      - key: SIGNUP_CODE
+        sync: false           # optional; needed to add accounts after the first
       - key: ANTHROPIC_API_KEY
         sync: false          # optional; insights work without it

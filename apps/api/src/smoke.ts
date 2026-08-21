@@ -1,10 +1,10 @@
 /**
  * End-to-end smoke test against a throwaway in-memory MongoDB.
  *
- *   npm run smoke -w @peoples/api
+ *   npm run smoke
  *
- * Imports the real CSV, walks a lead through the pipeline, and checks the
- * stats and insights maths. No Atlas account or network needed.
+ * Creates an account, imports the real CSV, walks a lead through the pipeline,
+ * and checks the stats and insights maths. No Atlas account or network needed.
  */
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
@@ -17,6 +17,9 @@ const CSV = path.resolve(
   here,
   "../../../cvs/dataset_crawler-google-places_2026-08-21_06-20-24-923.csv",
 );
+
+const EMAIL = "vikram@codevani.com";
+const PASSWORD = "a-long-enough-password";
 
 let passed = 0;
 let failed = 0;
@@ -36,19 +39,68 @@ async function main() {
   process.env.MONGODB_URI = mongo.getUri("peoples-smoke");
   process.env.NODE_ENV = "test";
   delete process.env.ANTHROPIC_API_KEY; // exercise the no-key path
+  delete process.env.SIGNUP_CODE; // registration closed after the first account
 
   const { createApp } = await import("./app.js");
   const agent = request(createApp());
 
   console.log("\nhealth");
   const health = await agent.get("/health");
-  check("responds 200", health.status === 200, health.body);
+  check("responds 200 without a session", health.status === 200, health.body);
+
+  console.log("\nauth — everything is locked by default");
+  for (const [label, res] of [
+    ["leads", await agent.get("/api/leads")],
+    ["import", await agent.post("/api/import")],
+    ["stats", await agent.get("/api/stats")],
+    ["insights", await agent.get("/api/insights")],
+  ] as const) {
+    check(`${label} rejects an anonymous request`, res.status === 401, res.status);
+  }
+
+  const setupState = await agent.get("/api/auth/setup");
+  check("reports first-run setup", setupState.body.needsSetup === true, setupState.body);
+
+  const weak = await agent.post("/api/auth/register").send({ email: "a@b.com", password: "short" });
+  check("rejects a weak password", weak.status === 400, weak.status);
+
+  const registered = await agent
+    .post("/api/auth/register")
+    .send({ email: "Vikram@Codevani.com", password: PASSWORD, name: "Vikram" });
+  check("creates the first account", registered.status === 201, registered.body);
+  check("normalises the email", registered.body.user?.email === EMAIL, registered.body.user?.email);
+  check("never returns a password hash", !JSON.stringify(registered.body).includes("passwordHash"));
+
+  const token = registered.body.token as string;
+  check("issues a JWT", typeof token === "string" && token.split(".").length === 3);
+
+  const second = await agent
+    .post("/api/auth/register")
+    .send({ email: "someone@else.com", password: "another-long-password" });
+  check("blocks a second signup with no code set", second.status === 403, second.status);
+
+  const wrongPw = await agent.post("/api/auth/login").send({ email: EMAIL, password: "wrong-password" });
+  check("rejects a wrong password", wrongPw.status === 401, wrongPw.status);
+
+  const unknown = await agent
+    .post("/api/auth/login")
+    .send({ email: "nobody@nowhere.com", password: "wrong-password" });
+  check("gives the same error for unknown emails", unknown.body.error === wrongPw.body.error, unknown.body.error);
+
+  const loggedIn = await agent.post("/api/auth/login").send({ email: EMAIL, password: PASSWORD });
+  check("signs in with the right password", loggedIn.status === 200, loggedIn.status);
+
+  const forged = await agent.get("/api/leads").set("Authorization", "Bearer not.a.real.token");
+  check("rejects a forged token", forged.status === 401, forged.status);
+
+  const auth = { Authorization: `Bearer ${token}` };
+
+  const me = await agent.get("/api/auth/me").set(auth);
+  check("returns the signed-in user", me.body.user?.email === EMAIL, me.body);
 
   console.log("\nimport");
   const csv = readFileSync(CSV);
-  const imported = await agent
-    .post("/api/import")
-    .attach("file", csv, "dataset.csv");
+  const imported = await agent.post("/api/import").set(auth).attach("file", csv, "dataset.csv");
   check("responds 200", imported.status === 200, imported.body);
   check("read 50 rows", imported.body.rowsRead === 50, imported.body.rowsRead);
   check("inserted 27 leads", imported.body.inserted === 27, imported.body.inserted);
@@ -57,11 +109,11 @@ async function main() {
   check("detected the title column", imported.body.detectedColumns?.name === "title");
 
   console.log("\nre-import is idempotent");
-  const again = await agent.post("/api/import").attach("file", csv, "dataset.csv");
+  const again = await agent.post("/api/import").set(auth).attach("file", csv, "dataset.csv");
   check("inserts nothing new", again.body.inserted === 0, again.body.inserted);
 
   console.log("\nlist");
-  const list = await agent.get("/api/leads?limit=5");
+  const list = await agent.get("/api/leads?limit=5").set(auth);
   check("responds 200", list.status === 200);
   check("total is 27", list.body.total === 27, list.body.total);
   check("returns 5", list.body.leads?.length === 5, list.body.leads?.length);
@@ -70,60 +122,58 @@ async function main() {
     list.body.leads[0].score >= list.body.leads[4].score,
     list.body.leads?.map((l: { score: number }) => l.score),
   );
-  check("has a wa number", /^91\d{10}$/.test(list.body.leads[0].waNumber ?? ""), list.body.leads[0].waNumber);
-  check("list carries a ready message", (list.body.leads[0].nextMessage ?? "").length > 80);
-  check(
-    "list carries a wa link",
-    (list.body.leads[0].waUrl ?? "").startsWith("https://wa.me/"),
-    list.body.leads[0].waUrl?.slice(0, 40),
-  );
-  check("list message is touch 1", list.body.leads[0].nextTouch === 1, list.body.leads[0].nextTouch);
 
   const lead = list.body.leads[0];
+  check("has a wa number", /^91\d{10}$/.test(lead.waNumber ?? ""), lead.waNumber);
+  check("list carries a ready message", (lead.nextMessage ?? "").length > 80);
+  check("list carries a wa link", (lead.waUrl ?? "").startsWith("https://wa.me/"), lead.waUrl?.slice(0, 40));
+  check("list message is touch 1", lead.nextTouch === 1, lead.nextTouch);
+
   console.log(`\nmessage for "${lead.name}"`);
-  const msg = await agent.get(`/api/leads/${lead._id}/message`);
+  const msg = await agent.get(`/api/leads/${lead._id}/message`).set(auth);
   check("responds 200", msg.status === 200, msg.body);
   check("is touch 1", msg.body.touch === 1, msg.body.touch);
   check("mentions the business", msg.body.message?.includes(lead.name.split(" ")[0]));
   check("wa url is a wa.me link", msg.body.waUrl?.startsWith("https://wa.me/"), msg.body.waUrl);
 
   console.log("\nmark sent");
-  const sent = await agent.post(`/api/leads/${lead._id}/sent`);
+  const sent = await agent.post(`/api/leads/${lead._id}/sent`).set(auth);
   check("status becomes SENT", sent.body.lead?.status === "SENT", sent.body.lead?.status);
   check("touches becomes 1", sent.body.lead?.touches === 1, sent.body.lead?.touches);
   check("schedules a follow-up", Boolean(sent.body.lead?.nextFollowUpAt), sent.body.lead?.nextFollowUpAt);
 
-  const msg2 = await agent.get(`/api/leads/${lead._id}/message`);
+  const msg2 = await agent.get(`/api/leads/${lead._id}/message`).set(auth);
   check("next message is the touch-2 template", msg2.body.touch === 2, msg2.body.touch);
   check("touch-2 text differs", msg2.body.message !== msg.body.message);
 
   // The list must advance too, or the button there would resend touch 1.
-  const listAfter = await agent.get("/api/leads?limit=5");
+  const listAfter = await agent.get("/api/leads?limit=5").set(auth);
   const same = listAfter.body.leads.find((l: { _id: string }) => l._id === lead._id);
   check("list advances to touch 2 after sending", same?.nextTouch === 2, same?.nextTouch);
-  check("list wa link uses the follow-up text", same?.waUrl !== list.body.leads[0].waUrl);
+  check("list wa link uses the follow-up text", same?.waUrl !== lead.waUrl);
 
   console.log("\ndaily cap counter");
-  const today = await agent.get("/api/leads/usage/today");
+  const today = await agent.get("/api/leads/usage/today").set(auth);
   check("counts 1 sent today", today.body.sentToday === 1, today.body);
+  check("reports the cap", today.body.cap === 30, today.body.cap);
 
   console.log("\nstatus change");
-  const replied = await agent.patch(`/api/leads/${lead._id}`).send({ status: "REPLIED" });
+  const replied = await agent.patch(`/api/leads/${lead._id}`).set(auth).send({ status: "REPLIED" });
   check("status becomes REPLIED", replied.body.lead?.status === "REPLIED", replied.body.lead?.status);
   check("stamps repliedAt", Boolean(replied.body.lead?.repliedAt));
 
-  const bad = await agent.patch(`/api/leads/${lead._id}`).send({ status: "NONSENSE" });
+  const bad = await agent.patch(`/api/leads/${lead._id}`).set(auth).send({ status: "NONSENSE" });
   check("rejects an invalid status with 400", bad.status === 400, bad.status);
 
   console.log("\nstats");
-  const stats = await agent.get("/api/stats");
+  const stats = await agent.get("/api/stats").set(auth);
   check("responds 200", stats.status === 200);
   check("27 leads", stats.body.totals?.leads === 27, stats.body.totals);
   check("sample size 1", stats.body.sampleSize === 1, stats.body.sampleSize);
   check("reply rate 100%", stats.body.replyRate === 100, stats.body.replyRate);
 
   console.log("\ninsights (no API key configured)");
-  const insights = await agent.get("/api/insights");
+  const insights = await agent.get("/api/insights").set(auth);
   check("responds 200", insights.status === 200, insights.body);
   check("has observations", insights.body.observations?.length > 0);
   check("flags low confidence", insights.body.lowConfidence === true);
@@ -135,7 +185,7 @@ async function main() {
   );
 
   console.log("\nfollow-up queue");
-  const due = await agent.get("/api/leads?dueOnly=true");
+  const due = await agent.get("/api/leads?dueOnly=true").set(auth);
   check("nothing due yet", due.body.total === 0, due.body.total);
 
   await mongo.stop();

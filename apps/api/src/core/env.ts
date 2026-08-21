@@ -26,6 +26,15 @@ const schema = z.object({
   FOLLOW_UP_DAYS: z.coerce.number().int().min(1).max(30).default(3),
   DAILY_SEND_CAP: z.coerce.number().int().min(1).max(200).default(30),
 
+  /**
+   * Signs session tokens. The dev default keeps local setup frictionless, but
+   * shipping it would let anyone mint a valid session — so production refuses
+   * to boot without a real one (checked below).
+   */
+  JWT_SECRET: z.string().min(32).default("dev-only-insecure-secret-change-me-in-production"),
+  /** Required to create accounts after the first. Unset means registration is closed. */
+  SIGNUP_CODE: optionalString,
+
   ANTHROPIC_API_KEY: optionalString,
   ANTHROPIC_MODEL: z.string().default("claude-opus-5"),
 });
@@ -44,5 +53,14 @@ export const env = {
   corsOrigins: parsed.data.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
   isProduction: parsed.data.NODE_ENV === "production",
 };
+
+// Failing at boot is far better than serving a deployment whose sessions
+// anyone could forge from a secret that is public in the repo.
+if (env.isProduction && env.JWT_SECRET.startsWith("dev-only-")) {
+  console.error(
+    "[env] JWT_SECRET is still the development default. Set a real one (32+ random characters) before deploying.",
+  );
+  process.exit(1);
+}
 
 export type Env = typeof env;

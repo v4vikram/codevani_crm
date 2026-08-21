@@ -6,12 +6,18 @@ import morgan from "morgan";
 import { env } from "./core/env.js";
 import { connectDB, dbState } from "./core/db.js";
 import { asyncHandler, errorHandler } from "./core/http.js";
+import { authRoutes } from "./features/auth/auth.routes.js";
+import { requireAuth } from "./features/auth/auth.middleware.js";
 import { leadRoutes } from "./features/leads/lead.routes.js";
 import { importRoutes } from "./features/import/import.routes.js";
 import { statsRoutes } from "./features/stats/stats.routes.js";
 import { insightsRoutes } from "./features/insights/insights.routes.js";
 
-/** Every feature module registers itself here and nowhere else. */
+/**
+ * Every feature registers itself here and nowhere else.
+ * Everything listed is behind requireAuth — this data is a list of real
+ * businesses and their phone numbers, so nothing here is public.
+ */
 const FEATURES = [
   { path: "/api/leads", router: leadRoutes },
   { path: "/api/import", router: importRoutes },
@@ -47,7 +53,10 @@ export function createApp() {
     }),
   );
 
-  for (const { path, router } of FEATURES) app.use(path, router);
+  // Auth is mounted before the guard: you cannot sign in through it otherwise.
+  app.use("/api/auth", authRoutes);
+
+  for (const { path, router } of FEATURES) app.use(path, requireAuth, router);
 
   app.use((_req, res) => res.status(404).json({ error: "Not found" }));
   app.use(errorHandler);

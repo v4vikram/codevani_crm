@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Upload, Sparkles } from "lucide-react";
+import { LayoutDashboard, Users, Upload, Sparkles, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/features/auth/auth-context";
 
 const TABS = [
   { href: "/", label: "Home", icon: LayoutDashboard },
@@ -18,10 +19,14 @@ const TABS = [
  */
 export function Nav() {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
+
+  // Nothing to navigate to until you are signed in.
+  if (!user || pathname === "/login") return null;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card safe-bottom sm:sticky sm:top-0 sm:bottom-auto sm:border-b sm:border-t-0 sm:pb-0">
-      <div className="mx-auto flex max-w-3xl">
+      <div className="mx-auto flex max-w-3xl items-center">
         {TABS.map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -39,6 +44,16 @@ export function Nav() {
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={signOut}
+          aria-label="Sign out"
+          title={user.email}
+          className="flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex-none sm:flex-row sm:gap-2 sm:px-4 sm:py-3 sm:text-sm"
+        >
+          <LogOut className="size-5 sm:size-4" />
+          <span className="sm:sr-only">Out</span>
+        </button>
       </div>
     </nav>
   );
