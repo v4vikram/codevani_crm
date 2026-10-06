@@ -13,6 +13,8 @@ import type {
 export const leadKeys = {
   all: ["leads"] as const,
   list: (filters: LeadFilters) => [...leadKeys.all, "list", filters] as const,
+  /** Scroll mode: one cache entry per filter set, holding every page loaded so far. */
+  infinite: (filters: LeadFilters) => [...leadKeys.all, "infinite", filters] as const,
   detail: (id: string) => [...leadKeys.all, "detail", id] as const,
   message: (id: string) => [...leadKeys.all, "message", id] as const,
   areas: () => [...leadKeys.all, "areas"] as const,

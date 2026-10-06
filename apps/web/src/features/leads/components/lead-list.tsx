@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-client";
 import { fetchLeads, fetchTodayUsage, leadKeys } from "../api/leads.api";
 import { STATUSES, STATUS_META, type LeadFilters, type Status } from "../types";
+import { usePaginationMode } from "../use-pagination-mode";
 import { LeadCard } from "./lead-card";
+import { ModeSwitch, PageNav } from "./pagination";
 
 const PAGE_SIZE = 25;
 
@@ -24,11 +26,66 @@ export function LeadList({ initialFilters = {} }: { initialFilters?: LeadFilters
   const [searchDraft, setSearchDraft] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data, isPending, isError, error, isPlaceholderData } = useQuery({
+  const [mode, setMode] = usePaginationMode();
+
+  // Only the active mode's query runs; the other keeps its cache for when you switch back.
+  const paged = useQuery({
     queryKey: leadKeys.list(filters),
     queryFn: () => fetchLeads(filters),
     placeholderData: keepPreviousData,
+    enabled: mode === "pages",
   });
+
+  // Scroll mode owns the page number, so it is stripped from the cache key.
+  const scrollFilters: LeadFilters = { ...filters, page: undefined };
+  const scrolled = useInfiniteQuery({
+    queryKey: leadKeys.infinite(scrollFilters),
+    queryFn: ({ pageParam }) => fetchLeads({ ...scrollFilters, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.pages ? last.page + 1 : undefined),
+    enabled: mode === "scroll",
+  });
+
+  const active = mode === "pages" ? paged : scrolled;
+  const { isPending, isError, error } = active;
+  const isPlaceholderData = mode === "pages" && paged.isPlaceholderData;
+
+  // Rows can shift between page fetches (a lead changes status, an import lands),
+  // so a lead may appear on two loaded pages; keep the first occurrence.
+  const leads = useMemo(() => {
+    if (mode === "pages") return paged.data?.leads;
+    const all = scrolled.data?.pages.flatMap((p) => p.leads);
+    return all && [...new Map(all.map((l) => [l._id, l])).values()];
+  }, [mode, paged.data, scrolled.data]);
+
+  const first = mode === "pages" ? paged.data : scrolled.data?.pages[0];
+  const total = first?.total ?? 0;
+  const totalPages = first?.pages ?? 1;
+  const currentPage = mode === "pages" ? (paged.data?.page ?? 1) : 1;
+
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = scrolled;
+  const sentinel = useRef<HTMLDivElement>(null);
+  const loadedPages = scrolled.data?.pages.length ?? 0;
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (mode !== "scroll" || !el || !hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) void fetchNextPage();
+      },
+      { rootMargin: "400px" }, // start fetching before the bottom is actually reached
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // loadedPages: re-observe after each load, so a sentinel still in view keeps pulling.
+  }, [mode, hasNextPage, isFetchingNextPage, fetchNextPage, loadedPages]);
+
+  const goToPage = (page: number) => {
+    setFilters((f) => ({ ...f, page }));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const { data: usage } = useQuery({ queryKey: leadKeys.usage(), queryFn: fetchTodayUsage });
   const atCap = usage ? usage.sentToday >= usage.cap : false;
@@ -117,18 +174,21 @@ export function LeadList({ initialFilters = {} }: { initialFilters?: LeadFilters
         </p>
       )}
 
-      {data && data.leads.length === 0 && (
+      {leads && leads.length === 0 && (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           No leads match this filter.
         </p>
       )}
 
-      {data && data.leads.length > 0 && (
+      {leads && leads.length > 0 && (
         <>
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
-              {data.total} lead{data.total === 1 ? "" : "s"}
+              {mode === "scroll" && total > leads.length
+                ? `${leads.length} of ${total} leads`
+                : `${total} lead${total === 1 ? "" : "s"}`}
             </p>
+            {totalPages > 1 && <ModeSwitch mode={mode} onChange={setMode} />}
             {usage && (
               <p className={atCap ? "text-sm font-medium text-warning" : "text-sm text-muted-foreground"}>
                 {usage.sentToday}/{usage.cap} sent today
@@ -142,30 +202,24 @@ export function LeadList({ initialFilters = {} }: { initialFilters?: LeadFilters
             </p>
           )}
           <div className={isPlaceholderData ? "space-y-3 opacity-60" : "space-y-3"}>
-            {data.leads.map((lead) => (
+            {leads.map((lead) => (
               <LeadCard key={lead._id} lead={lead} atCap={atCap} />
             ))}
           </div>
 
-          {data.pages > 1 && (
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <Button
-                variant="outline"
-                disabled={data.page <= 1}
-                onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
-              >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {data.page} / {data.pages}
-              </span>
-              <Button
-                variant="outline"
-                disabled={data.page >= data.pages}
-                onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
-              >
-                Next
-              </Button>
+          {mode === "pages" && totalPages > 1 && (
+            <PageNav page={currentPage} pages={totalPages} onChange={goToPage} />
+          )}
+
+          {mode === "scroll" && (
+            <div ref={sentinel} className="py-4 text-center text-sm text-muted-foreground" aria-live="polite">
+              {isFetchingNextPage
+                ? "Loading more…"
+                : hasNextPage
+                  ? ""
+                  : total > PAGE_SIZE
+                    ? `You've reached the end — ${total} leads`
+                    : ""}
             </div>
           )}
         </>
