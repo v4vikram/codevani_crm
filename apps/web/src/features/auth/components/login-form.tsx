@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { LogIn, UserPlus } from "lucide-react";
@@ -103,8 +104,15 @@ export function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={isRegister ? "new-password" : "current-password"}
         />
-        {isRegister && (
+        {isRegister ? (
           <p className="text-xs text-muted-foreground">At least 10 characters.</p>
+        ) : (
+          <Link
+            href="/forgot-password"
+            className="inline-block text-xs text-muted-foreground underline-offset-4 hover:underline"
+          >
+            Forgot password?
+          </Link>
         )}
       </div>
 

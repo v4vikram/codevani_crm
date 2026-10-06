@@ -5,6 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "../auth-context";
 
+/** Reachable without a session — you can't sign in or recover a password otherwise. */
+const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password"];
+
 /**
  * Gates the app shell. This is convenience, not security -- the API rejects
  * unauthenticated requests on its own, so a bypass here reveals nothing.
@@ -13,13 +16,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const isLoginPage = pathname === "/login";
+  const isPublicPage = PUBLIC_PATHS.includes(pathname);
 
   useEffect(() => {
-    if (!loading && !user && !isLoginPage) router.replace("/login");
-  }, [loading, user, isLoginPage, router]);
+    if (!loading && !user && !isPublicPage) router.replace("/login");
+  }, [loading, user, isPublicPage, router]);
 
-  if (isLoginPage) return <>{children}</>;
+  if (isPublicPage) return <>{children}</>;
 
   if (loading || !user) {
     return (

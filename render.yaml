@@ -27,3 +27,9 @@ services:
         sync: false           # optional; needed to add accounts after the first
       - key: ANTHROPIC_API_KEY
         sync: false          # optional; insights work without it
+      - key: GMAIL_USER
+        sync: false           # sends password-reset emails
+      - key: GMAIL_APP_PASSWORD
+        sync: false           # Google app password, not the account password
+      - key: APP_URL
+        sync: false           # your Vercel URL; reset links point here

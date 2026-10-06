@@ -88,6 +88,20 @@ cleaner, but the app and API sit on different domains (Vercel and Render) and
 browsers that block third-party cookies would silently drop a cross-site
 session cookie.
 
+**Forgot password:** the sign-in page links to a reset form that emails a
+single-use link, valid for 30 minutes, sent from your Gmail account. Set
+`GMAIL_USER` and `GMAIL_APP_PASSWORD` (a Google [app
+password](https://myaccount.google.com/apppasswords) — needs 2-step
+verification — not your normal password) and `APP_URL` (your web URL, which the
+link points to). Without Gmail configured the link is printed to the API console
+instead, which is enough for local development. Only a hash of the token is
+stored, the response never reveals whether an email has an account, and a reset
+signs out every existing session.
+
+Render's free tier blocks outbound SMTP, so Gmail sending works locally but not
+there; it needs a paid Render instance (or swap `core/mailer.ts` to an
+HTTPS email API).
+
 `JWT_SECRET` must be set in production — the API refuses to boot with the
 development default, since a known secret lets anyone forge a session.
 

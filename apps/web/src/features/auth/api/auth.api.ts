@@ -26,3 +26,13 @@ export async function fetchSetupState(): Promise<{ needsSetup: boolean }> {
   const { data } = await api.get<{ needsSetup: boolean }>("/api/auth/setup");
   return data;
 }
+
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>("/api/auth/forgot-password", { email });
+  return data;
+}
+
+export async function resetPassword(input: { token: string; password: string }): Promise<AuthResponse> {
+  const { data } = await api.post<AuthResponse>("/api/auth/reset-password", input);
+  return data;
+}

@@ -35,6 +35,17 @@ const schema = z.object({
   /** Required to create accounts after the first. Unset means registration is closed. */
   SIGNUP_CODE: optionalString,
 
+  /**
+   * Password-reset email goes out through Gmail. GMAIL_APP_PASSWORD is a
+   * 16-character Google *app password* (needs 2-step verification), not the
+   * account password. Unset means reset links are only logged to the console,
+   * which is fine locally and useless in production.
+   */
+  GMAIL_USER: optionalString,
+  GMAIL_APP_PASSWORD: optionalString,
+  /** Where the web app lives. Reset links are built from this, never from request headers. */
+  APP_URL: z.string().default("http://localhost:3000"),
+
   ANTHROPIC_API_KEY: optionalString,
   ANTHROPIC_MODEL: z.string().default("claude-opus-5"),
 });

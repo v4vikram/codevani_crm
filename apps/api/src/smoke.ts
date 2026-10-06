@@ -93,10 +93,53 @@ async function main() {
   const forged = await agent.get("/api/leads").set("Authorization", "Bearer not.a.real.token");
   check("rejects a forged token", forged.status === 401, forged.status);
 
-  const auth = { Authorization: `Bearer ${token}` };
+  let auth = { Authorization: `Bearer ${token}` };
 
   const me = await agent.get("/api/auth/me").set(auth);
   check("returns the signed-in user", me.body.user?.email === EMAIL, me.body);
+
+  console.log("\nforgot password");
+  const { testOutbox } = await import("./core/mailer.js");
+  const NEW_PASSWORD = "a-brand-new-password";
+  const resetLink = () => testOutbox.at(-1)?.text.match(/token=([\w-]+)/)?.[1];
+
+  const unknownReset = await agent.post("/api/auth/forgot-password").send({ email: "nobody@nowhere.com" });
+  check("unknown email gets the same 200", unknownReset.status === 200, unknownReset.status);
+  check("unknown email sends nothing", testOutbox.length === 0, testOutbox.length);
+
+  const forgot = await agent.post("/api/auth/forgot-password").send({ email: EMAIL });
+  check("known email gets 200 with the same body", forgot.body.message === unknownReset.body.message, forgot.body);
+  check("emails the reset link", testOutbox.length === 1 && testOutbox[0]?.to === EMAIL, testOutbox.length);
+  const resetToken = resetLink();
+  check("link carries a token", Boolean(resetToken), testOutbox[0]?.text);
+
+  await agent.post("/api/auth/forgot-password").send({ email: EMAIL });
+  check("a second request inside the cooldown sends nothing", testOutbox.length === 1, testOutbox.length);
+
+  const badToken = await agent.post("/api/auth/reset-password").send({ token: "nope", password: NEW_PASSWORD });
+  check("rejects an unknown token", badToken.status === 400, badToken.status);
+
+  const weakReset = await agent.post("/api/auth/reset-password").send({ token: resetToken, password: "short" });
+  check("rejects a weak new password", weakReset.status === 400, weakReset.status);
+
+  await new Promise((r) => setTimeout(r, 1100)); // iat has 1s resolution; the reset must post-date the old session
+  const reset = await agent.post("/api/auth/reset-password").send({ token: resetToken, password: NEW_PASSWORD });
+  check("resets with a valid token", reset.status === 200, reset.body);
+  check("signs in with a fresh JWT", typeof reset.body.token === "string");
+
+  const reused = await agent.post("/api/auth/reset-password").send({ token: resetToken, password: "yet-another-password" });
+  check("the link works only once", reused.status === 400, reused.status);
+
+  const oldPw = await agent.post("/api/auth/login").send({ email: EMAIL, password: PASSWORD });
+  check("old password stops working", oldPw.status === 401, oldPw.status);
+  const newPw = await agent.post("/api/auth/login").send({ email: EMAIL, password: NEW_PASSWORD });
+  check("new password works", newPw.status === 200, newPw.status);
+
+  const staleSession = await agent.get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+  check("sessions from before the reset are revoked", staleSession.status === 401, staleSession.status);
+  const freshSession = await agent.get("/api/leads").set("Authorization", `Bearer ${reset.body.token}`);
+  check("the new session works", freshSession.status === 200, freshSession.status);
+  auth = { Authorization: `Bearer ${reset.body.token}` }; // the rest of the run uses the new session
 
   console.log("\nimport");
   const csv = readFileSync(CSV);

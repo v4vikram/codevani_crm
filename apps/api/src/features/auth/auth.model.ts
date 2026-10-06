@@ -14,6 +14,11 @@ const userSchema = new Schema(
     /** bcrypt hash. Never selected by default so it cannot leak into a response. */
     passwordHash: { type: String, required: true, select: false },
     lastLoginAt: { type: Date, default: null },
+    /** SHA-256 of the emailed reset token — the raw token is never stored. */
+    resetTokenHash: { type: String, default: null, select: false, index: true },
+    resetTokenExpiresAt: { type: Date, default: null, select: false },
+    /** Sessions issued before this are rejected, so a reset signs out every other device. */
+    passwordChangedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
